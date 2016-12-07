@@ -20,6 +20,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Map;
 
 import org.toubassi.femtozip.CompressionModel;
 import org.toubassi.femtozip.DocumentList;
@@ -46,6 +47,13 @@ public class FemtoZipCompressionModel extends CompressionModel {
     public void build(DocumentList documents) throws IOException {
         buildDictionaryIfUnspecified(documents);
         codeModel = ((ModelBuilder)buildEncodingModel(documents)).createModel();
+    }
+    
+    //TODO @a2k
+    public Map<String, Integer> buildDictionaryWithSubScores(DocumentList documents) throws IOException{
+    	Map<String, Integer> substrings = super.buildDictionaryWithSubScores(documents);
+    	codeModel = ((ModelBuilder)buildEncodingModel(documents)).createModel();
+    	return substrings;
     }
     
     protected SubstringPacker.Consumer createModelBuilder() {

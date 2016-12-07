@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.toubassi.femtozip.dictionary.DictionaryOptimizer;
 import org.toubassi.femtozip.models.FemtoZipCompressionModel;
@@ -334,9 +335,24 @@ public abstract class CompressionModel implements SubstringPacker.Consumer {
         return optimizer.optimize(maxDictionaryLength);
     }
     
+    /**
+     * creates a dictionary and also returns the dictionary substrings and their scores
+     * @param documents
+     * @return Map<String,Integer>
+     * @throws IOException
+     */
+    protected Map<String, Integer> buildDictionaryWithSubScores(DocumentList documents) throws IOException{
+    	int maxDictLength = (this.maxDictionaryLength != 0) ? this.maxDictionaryLength: (64*1024);
+        DictionaryOptimizer optimizer = new DictionaryOptimizer(documents);
+        dictionary = optimizer.optimize(maxDictLength);	
+        return optimizer.getDictSubstrings();
+    }
+    
     protected SubstringPacker.Consumer createModelBuilder() {
         return null;
     }
+    
+    
     
     protected SubstringPacker.Consumer buildEncodingModel(DocumentList documents) {
         try {

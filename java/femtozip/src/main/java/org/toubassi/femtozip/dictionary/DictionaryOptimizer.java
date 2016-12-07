@@ -18,23 +18,39 @@ package org.toubassi.femtozip.dictionary;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 import org.toubassi.femtozip.DocumentList;
 
-
+/**
+ * new version of DictionaryOptimizer which also supports
+ * storing the all substring arrays upon making a dictionary.
+ * Changed to meet the requirements of dictionary repository
+ *  for Brokers in Shared Dictionary Compression Pub/Sub
+ * @author Arash
+ *
+ */
 public class DictionaryOptimizer {
 
     private SubstringArray substrings;
+    private Map<String,Integer> dictSubScores;
     private byte[] bytes;
     private int[] suffixArray;
     private int[] lcp;
     private int[] starts;
     
     public DictionaryOptimizer(DocumentList documents) throws IOException {
-        ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
+    	
+    	//Linked because the order is important
+    	dictSubScores =  new LinkedHashMap<String, Integer>();
+    	
+    	ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
         starts = new int[documents.size()];
         
         for (int i = 0, count = documents.size(); i < count; i++) {
@@ -175,13 +191,35 @@ public class DictionaryOptimizer {
                 }
             }
             pruned.setScore(pruned.size(), substrings.index(i), substrings.length(i), substrings.score(i));
+            
+            
             size += substrings.length(i);
+            
+            
             // We calculate 2x because when we lay the strings out end to end we will merge common prefix/suffixes
             if (size >= 2*desiredLength) {
                 break;
             }
+            
         }
+        
+        // keep record of the pruned substring of this dictionary
 
+        /* my code here @a2k
+        
+        System.out.println("###############################");
+        for (int j = 0; j < pruned.size() ; j++) {
+        	int startIndex = suffixArray[pruned.index(j)];
+        	int endIndex = startIndex + pruned.length(j);
+        	
+        	System.out.print(j + ": " + pruned.score(j) + " substring : ");
+        	for(int i = startIndex; i < endIndex; i++ )
+        		System.out.print((char)bytes[i]);
+        	System.out.println("");
+        }    
+        System.out.println("###############################");
+        */
+        
         byte[] packed = new byte[desiredLength];
         int pi = desiredLength;
         
@@ -192,11 +230,40 @@ public class DictionaryOptimizer {
                 length = pi;
             }
             pi -= prepend(bytes, suffixArray[pruned.index(i)], packed, pi, length);
+            
+            //storing substring and scores of the dictionary
+            byte[] temp = Arrays.copyOfRange(bytes, suffixArray[pruned.index(i)], suffixArray[pruned.index(i)]
+            		+ length);
+            //TODO check if the toString method doesn't fail when storing special char
+            // I think utf-8 is used by default for byte to String
+            String tempSubString = new String(temp,StandardCharsets.UTF_8);
+            dictSubScores.put(tempSubString, pruned.score(i));
         }
         
         if (pi > 0) {
             packed = Arrays.copyOfRange(packed, pi, packed.length);
         }
+        
+        
+        int entryCount = 0;
+        
+        System.out.println("###############################");
+        
+        for(Map.Entry<String,Integer> sub: dictSubScores.entrySet()){
+        	System.out.println(entryCount + " score: " + sub.getValue() +
+        			" substring: " + sub.getKey());
+        	entryCount++;
+        }
+        System.out.println("###############################");
+        
+        
+        /* my code here a2k
+        */
+        System.out.println("$$$$$$$$$$$$$$$$4Dictionary");
+        for (int j = 0; j < packed.length ; j++) {  	
+        	System.out.print((char)packed[j]);
+        }
+        
         
         return packed;
     }
@@ -238,6 +305,17 @@ public class DictionaryOptimizer {
         int length = substrings.length(i);
         return Arrays.copyOfRange(bytes, index, index + length);
     }
+    
+    /**
+     * 
+     * @return dictsubstrings which contains the chosen substrings
+     * for the dict and their scores
+     */
+    public Map<String,Integer> getDictSubstrings(){
+    	
+    	return this.dictSubScores;
+    }
+    
     
     /**
      * For debugging
