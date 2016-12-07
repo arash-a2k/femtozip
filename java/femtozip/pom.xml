@@ -4,8 +4,8 @@
     <groupId>org.toubassi.femtozip</groupId>
     <artifactId>femtozip</artifactId>
     <packaging>jar</packaging>
-    <version>1.0</version>
-    <name>org.toubassi.femtozip</name>
+    <version>1.2-SUBSTRING_HISTORY</version>
+    <name>org.toubassi.femtozip a2k version</name>
     <url>http://maven.apache.org</url>
     <properties>
         <maven.compiler.source>1.6</maven.compiler.source>
