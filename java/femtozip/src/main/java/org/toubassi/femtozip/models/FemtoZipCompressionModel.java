@@ -56,6 +56,14 @@ public class FemtoZipCompressionModel extends CompressionModel {
     	return substrings;
     }
     
+    public void buildModel(DocumentList documents){
+    	if(this.dictionary == null)
+    		return;
+    	else{
+    		codeModel = ((ModelBuilder)buildEncodingModel(documents)).createModel();
+    	}
+    }
+    
     protected SubstringPacker.Consumer createModelBuilder() {
         return new ModelBuilder();
     }
