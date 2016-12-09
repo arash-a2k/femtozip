@@ -247,6 +247,7 @@ public class DictionaryOptimizer {
         
         int entryCount = 0;
         
+        /* a2k : printing substrings and scores
         System.out.println("###############################");
         
         for(Map.Entry<String,Integer> sub: dictSubScores.entrySet()){
@@ -256,14 +257,14 @@ public class DictionaryOptimizer {
         }
         System.out.println("###############################");
         
-        
-        /* my code here a2k
         */
+        /* printing final dictionary 
+        
         System.out.println("$$$$$$$$$$$$$$$$4Dictionary");
         for (int j = 0; j < packed.length ; j++) {  	
         	System.out.print((char)packed[j]);
         }
-        
+        */
         
         return packed;
     }
