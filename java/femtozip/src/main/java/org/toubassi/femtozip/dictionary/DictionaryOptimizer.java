@@ -56,6 +56,10 @@ public class DictionaryOptimizer {
         DictionaryOptimizer dicOpt = new DictionaryOptimizer(documents);
         return dicOpt.optimize(desiredLength);
     }
+    
+    public ByteBuffer getOptimizedDictionary(int desiredLength) throws IOException {
+        return optimize(desiredLength);
+    }
 
     public static ByteBuffer readDictionary(DataInputStream in) throws IOException {
         int dictionaryLength = in.readInt();

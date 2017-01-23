@@ -105,6 +105,23 @@ public class CompressionModelBase {
     public static CompressionModel buildModel(CompressionModelVariant model, DocumentList documents, int maxDictionaryLength) throws IOException {
         return buildModel(model, documents, DictionaryOptimizer.getOptimizedDictionary(documents, maxDictionaryLength));
     }
+    
+    public static Object[] buildModelWithSubscores(CompressionModelVariant model, DocumentList documents, int maxDictionaryLength) throws IOException {
+    	DictionaryOptimizer optimizer = new DictionaryOptimizer(documents);
+    	CompressionModel comprModel = 
+    			buildModel(model, documents, optimizer.getOptimizedDictionary(maxDictionaryLength));
+    	
+    	if (model == CompressionModelVariant.FemtoZip){
+    		Object objArray[] = new Object[2];
+    		objArray [0] = comprModel;
+    		objArray [1] = optimizer.calcSubstringScores(maxDictionaryLength);
+    		return objArray;
+    	}else{
+    		System.err.println("Not implemented for variant " + model);
+    		return null;
+    	}
+    	
+    }
 
     public static CompressionModel buildModel(CompressionModelVariant variant, DocumentList documents, ByteBuffer dictionary) throws IOException {
         switch (variant) {
