@@ -15,22 +15,42 @@
  */
 package org.toubassi.femtozip.models;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import org.toubassi.femtozip.CompressionModel;
 
-public class GZipCompressionModel extends GZipDictionaryCompressionModel {
+import java.io.*;
+import java.nio.ByteBuffer;
 
-    public void load(DataInputStream in) throws IOException {
-        // Nothing to save.  We override so the base class doesn't save the dictionary
+public class GZipCompressionModel implements CompressionModel {
+
+    GZipDictionaryCompressionModel gZipDictionaryCompressionModel;
+
+    public GZipCompressionModel() {
+         gZipDictionaryCompressionModel = new GZipDictionaryCompressionModel(ByteBuffer.allocate(0));
     }
 
+    @Override
+    public int compress(ByteBuffer decompressedIn, ByteBuffer compressedOut) {
+        return this.gZipDictionaryCompressionModel.compress(decompressedIn, compressedOut);
+    }
+
+    @Override
+    public int compress(ByteBuffer decompressedIn, OutputStream compressedOut) throws IOException {
+        return this.gZipDictionaryCompressionModel.compress(decompressedIn, compressedOut);
+    }
+
+    @Override
+    public int decompress(ByteBuffer compressedIn, ByteBuffer decompressedOut) {
+        return this.gZipDictionaryCompressionModel.decompress(compressedIn, decompressedOut);
+    }
+
+    @Override
+    public int decompress(InputStream compressedIn, ByteBuffer decompressedOut) throws IOException {
+        return this.gZipDictionaryCompressionModel.decompress(compressedIn, decompressedOut);
+    }
+
+    @Override
     public void save(DataOutputStream out) throws IOException {
-        // Nothing to save.  We override so the base class doesn't save the dictionary
-    }
-
-    public void compress(byte[] data, OutputStream out) throws IOException {
-        compress(out, null, data); 
+        // Nothing to save, we put the classname to know which CompressionModel to restore
+        out.writeUTF(getClass().getName());
     }
 }

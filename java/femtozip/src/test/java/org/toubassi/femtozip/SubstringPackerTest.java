@@ -17,10 +17,13 @@ package org.toubassi.femtozip;
 
 import java.io.UnsupportedEncodingException;
 
+import java.nio.ByteBuffer;
+
 import org.junit.Assert;
 import org.junit.Test;
 import org.toubassi.femtozip.models.VerboseStringCompressionModel;
 
+import static org.toubassi.femtozip.util.FileUtil.getString;
 
 
 public class SubstringPackerTest {
@@ -87,21 +90,34 @@ public class SubstringPackerTest {
 
     private String pack(String s, String dict) {
         try {
-            byte[] bytes = s.getBytes("UTF-8");
-            byte[] dictBytes = dict == null ? null : dict.getBytes("UTF-8");
-            
-            VerboseStringCompressionModel model = new VerboseStringCompressionModel();
-            model.setDictionary(dictBytes);
-            byte[] compressed = model.compress(bytes);
-            byte[] decompressed = model.decompress(compressed);
-            
-            Assert.assertEquals("Compressed: " + (new String(compressed, "UTF-8")), s, new String(decompressed, "UTF-8"));
-            
-            return new String(compressed, "UTF-8");
+            ByteBuffer original = ByteBuffer.wrap(s.getBytes("UTF-8"));
+            ByteBuffer compressed = ByteBuffer.allocate(original.remaining() * 2);
+            ByteBuffer decompressed = ByteBuffer.allocate(original.remaining() * 2);
+
+            VerboseStringCompressionModel model;
+            if(dict != null) {
+                ByteBuffer dictBytes = ByteBuffer.wrap(dict.getBytes("UTF-8"));
+                model = new VerboseStringCompressionModel(dictBytes);
+            } else {
+                model = new VerboseStringCompressionModel();
+            }
+
+            //System.out.println(getString(bytes));
+
+            model.compress(original, compressed);
+            compressed.rewind();
+            int writtenBytes = model.decompress(compressed, decompressed);
+
+            compressed.rewind();
+            String compressedS = getString(compressed);
+            String decompressedS = getString(decompressed);
+
+            Assert.assertEquals("Compressed: " + compressedS, s, decompressedS);
+
+            return compressedS;
         }
         catch (UnsupportedEncodingException e) {
             throw new RuntimeException(e);
         }
     }
-
 }

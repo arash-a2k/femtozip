@@ -15,9 +15,12 @@
  */
 package org.toubassi.femtozip;
 
+import java.nio.ByteBuffer;
+
 import java.io.IOException;
 
 public interface DocumentList {
     public int size();
+    public ByteBuffer getBB(int i) throws IOException;
     public byte[] get(int i) throws IOException;
 }

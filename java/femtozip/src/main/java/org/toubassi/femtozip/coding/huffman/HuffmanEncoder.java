@@ -22,8 +22,8 @@ public class HuffmanEncoder {
     private BitOutput bitOut;
     private HuffmanModel model;
     
-    public HuffmanEncoder(HuffmanModel model, OutputStream out) {
-        bitOut = new BitOutput(out);
+    public HuffmanEncoder(HuffmanModel model, BitOutput out) {
+        this.bitOut = out;
         this.model = model;
     }
     
@@ -33,8 +33,6 @@ public class HuffmanEncoder {
     
     public void close() throws IOException {
         model.getCodewordForEOF().write(bitOut);//EOF
-        // regrettable we can't flush without closing.  Yes bitoutput has flush
-        // but it doesn't write the last fractional bit.  Could add that if we needed.
-        bitOut.close();
+        bitOut.flush();
     }
 }

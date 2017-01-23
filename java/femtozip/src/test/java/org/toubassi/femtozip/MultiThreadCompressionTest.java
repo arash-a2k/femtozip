@@ -19,18 +19,37 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Random;
 
-import junit.framework.Assert;
+import java.nio.ByteBuffer;
 
+
+import org.junit.Assert;
 import org.junit.Test;
-import org.toubassi.femtozip.models.GZipCompressionModel;
-import org.toubassi.femtozip.models.GZipDictionaryCompressionModel;
-import org.toubassi.femtozip.models.FemtoZipCompressionModel;
-import org.toubassi.femtozip.models.PureHuffmanCompressionModel;
-import org.toubassi.femtozip.models.VariableIntCompressionModel;
-import org.toubassi.femtozip.models.VerboseStringCompressionModel;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.toubassi.femtozip.models.*;
+
+import static junit.framework.TestCase.assertNull;
+import static org.toubassi.femtozip.util.FileUtil.getString;
 
 
+@RunWith(Parameterized.class)
 public class MultiThreadCompressionTest {
+
+    private final CompressionModelVariant model;
+
+    public MultiThreadCompressionTest(CompressionModelVariant model) {
+        this.model = model;
+    }
+
+    @Parameterized.Parameters()
+    public static Iterable<Object[]> data() {
+        return TestUtil.getActiveCompressionModels();
+    }
+
+    @Test
+    public void testThreading() throws IOException, InterruptedException {
+        testThreadedCompressionModel(model);
+    }
     
     public static class CompressionThread extends Thread {
         
@@ -38,10 +57,10 @@ public class MultiThreadCompressionTest {
         long runTime;
         CompressionModel model;
         String source;
-        String dictionary;
-        Exception e;
+        ByteBuffer dictionary;
+        Throwable e;
         
-        public CompressionThread(long runTimeMillis, CompressionModel model, String dictionary) {
+        public CompressionThread(long runTimeMillis, CompressionModel model, ByteBuffer dictionary) {
             runTime = runTimeMillis;
             this.model = model;
             Random random = new Random();
@@ -55,48 +74,45 @@ public class MultiThreadCompressionTest {
         }
         
         private void testModel(CompressionModel model, String source) {
-            byte[] sourceBytes = source.getBytes();
-            byte[] compressedBytes = model.compress(sourceBytes);
+            ByteBuffer sourceBytes = ByteBuffer.wrap(source.getBytes());
+            ByteBuffer compressedBytes = ByteBuffer.allocate(sourceBytes.remaining() * 3);
+            ByteBuffer decompressedBytes = ByteBuffer.allocate(sourceBytes.remaining());
 
-            byte[] decompressedBytes = model.decompress(compressedBytes);
-            String decompressedString = new String(decompressedBytes);
-            
+            model.compress(sourceBytes, compressedBytes);
+            model.decompress(compressedBytes, decompressedBytes);
+
+            String decompressedString = getString(decompressedBytes);
             Assert.assertEquals(source, decompressedString);
         }
-        
+
         public void run() {
             try {
                 while (true) {
                     if (start == 0) {
                         start = System.currentTimeMillis();
-                    }
-                    else if (System.currentTimeMillis() - start > runTime) {
+                    } else if (System.currentTimeMillis() - start > runTime) {
                         return;
                     }
-                    
+
                     testModel(model, source);
                 }
             }
-            catch (Exception e){
-                this.e = e;
+            catch (Throwable ex) {
+                this.e = ex;
             }
         }
-        
     }
     
-    void testThreadedCompressionModel(CompressionModel model) throws IOException, InterruptedException {
+    void testThreadedCompressionModel(CompressionModelVariant modelType) throws IOException, InterruptedException {
         Random random = new Random();
         StringBuilder dict = new StringBuilder();
         for (int i = 0, count = 256 + random.nextInt(64); i < count; i++) {
             dict.append('a' + random.nextInt(26));
         }
-        String dictionary = dict.toString();
-        
-        byte[] dictionaryBytes = dictionary.getBytes();
-        
-        model.setDictionary(dictionaryBytes);
-        model.build(new ArrayDocumentList(dictionaryBytes));
-        
+        ByteBuffer dictionary = ByteBuffer.wrap(dict.toString().getBytes());
+
+        CompressionModel model = CompressionModelBase.buildModel(modelType, new ArrayDocumentList(dictionary), dictionary);
+
         ArrayList<CompressionThread> threads = new ArrayList<CompressionThread>();
         threads.add(new CompressionThread(500, model, dictionary));
         threads.add(new CompressionThread(500, model, dictionary));
@@ -109,24 +125,15 @@ public class MultiThreadCompressionTest {
         for (CompressionThread thread : threads) {
             thread.start();
         }
-        
         for (CompressionThread thread : threads) {
             thread.join();
-            if (thread.e != null) {
-                thread.e.printStackTrace();
-            }
-            Assert.assertNull("Exception in thread " + thread.getId() + " : " + model.getClass() + " " + thread.e, thread.e);
         }
-    }
-
-    @Test
-    public void testThreading() throws IOException, InterruptedException {
-        
-        testThreadedCompressionModel(new VerboseStringCompressionModel());
-        testThreadedCompressionModel(new FemtoZipCompressionModel());
-        testThreadedCompressionModel(new GZipDictionaryCompressionModel());
-        testThreadedCompressionModel(new GZipCompressionModel());
-        testThreadedCompressionModel(new PureHuffmanCompressionModel());
-        testThreadedCompressionModel(new VariableIntCompressionModel());
+        for (CompressionThread thread : threads) {
+            if (thread.e != null) {
+                System.out.println(modelType.name());
+                thread.e.printStackTrace();
+                assertNull("Exception in thread " + thread.getId() + " : " + model.getClass() + " " + thread.e, thread.e);
+            }
+        }
     }
 }

@@ -15,63 +15,56 @@
  */
 package org.toubassi.femtozip.substring;
 
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+
+
 import java.io.ByteArrayOutputStream;
 
 public class SubstringUnpacker implements SubstringPacker.Consumer {
-    private byte[] dictionary;
-    private ByteOutput bytesOut = new ByteOutput();
-    private byte[] unpackedBytes;
-    
-    public SubstringUnpacker(byte[] dictionary) {
-        this.dictionary = dictionary == null ? new byte[0] : dictionary;
+    private ByteBuffer dictionary;
+    private final ByteBuffer bytesOut;
+
+    public SubstringUnpacker(ByteBuffer dictionary, ByteBuffer bytesOut) {
+        this.dictionary = dictionary == null ? ByteBuffer.allocate(0) : dictionary;
+        this.bytesOut = bytesOut;
     }
     
     public void encodeLiteral(int aByte, Object context) {
-        bytesOut.write(aByte);
-    }
-    
-    public byte[] getUnpackedBytes() {
-        if (unpackedBytes == null) {
-            unpackedBytes = bytesOut.toByteArray();
-            bytesOut = new ByteOutput();
-        }
-        return unpackedBytes;
+        bytesOut.put((byte)aByte);
     }
 
     public void encodeSubstring(int offset, int length, Object context) {
-        int currentIndex = bytesOut.size();
+        int dictLength = dictionary.remaining();
+        int currentIndex = bytesOut.position();
+
         if (currentIndex + offset < 0) {
-            int startDict = currentIndex + offset + dictionary.length;
+            int startDict = currentIndex + offset + dictLength;
             int endDict = startDict + length;
             int end = 0;
             
-            if (endDict > dictionary.length) {
-                end = endDict - dictionary.length;
-                endDict = dictionary.length;
+            if (endDict > dictLength) {
+                end = endDict - dictLength;
+                endDict = dictLength;
             }
             for (int i = startDict; i < endDict; i++) {
-                bytesOut.write(dictionary[i]);
+                bytesOut.put(dictionary.get(i));
             }
             
             if (end > 0) {
                 for (int i = 0; i < end; i++) {
-                    bytesOut.write(bytesOut.get(i));
+                    bytesOut.put(bytesOut.get(i));
                 }
             }
         }
         else {
             for (int i = currentIndex + offset, count = currentIndex + offset + length; i < count; i++) {
-                bytesOut.write(bytesOut.get(i));
+                bytesOut.put(bytesOut.get(i));
             }
         }
     }
     
     public void endEncoding(Object context) {
-    }
-    
-    private static class ByteOutput extends ByteArrayOutputStream {
-        public byte get(int i) {
-            return buf[i];
-        }
+        //Nothing
     }
 }

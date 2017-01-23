@@ -16,10 +16,12 @@
 package org.toubassi.femtozip.substring;
 
 
+import java.nio.ByteBuffer;
+
 public class SubstringPacker {
     private static final int MinimumMatchLength = PrefixHash.PrefixLength;
     
-    private byte[] dictionary;
+    private ByteBuffer dictionary;
     private PrefixHash dictHash;
     
     public interface Consumer {
@@ -28,20 +30,22 @@ public class SubstringPacker {
         public void endEncoding(Object context);
     }
     
-    public SubstringPacker(byte[] dictionary) {
-        this.dictionary = dictionary = dictionary == null ? new byte[0] : dictionary;
+    public SubstringPacker(ByteBuffer dictionary) {
+        this.dictionary = dictionary;
         dictHash = new PrefixHash(dictionary, true);
     }
     
-    public void pack(byte[] rawBytes, SubstringPacker.Consumer consumer, Object consumerContext) {
+    public void pack(ByteBuffer rawBytes, SubstringPacker.Consumer consumer, Object consumerContext) {
         PrefixHash hash = new PrefixHash(rawBytes, false);
-        int dictLen = dictionary.length;
+        int dictLen = dictionary.remaining();
 
         int previousMatchIndex = 0;
         int previousMatchLength = 0;
-        
+
+        int initialPosition = rawBytes.position();
         int curr, count;
-        for (curr = 0, count = rawBytes.length; curr < count; curr++) {
+        int rawBytesLength = rawBytes.remaining();
+        for (curr = 0, count = rawBytesLength; curr < count; curr++) {
             int bestMatchIndex = 0;
             int bestMatchLength = 0;
             
@@ -67,7 +71,7 @@ public class SubstringPacker {
             }
             
             if (previousMatchLength > 0 && bestMatchLength <= previousMatchLength) {
-                // We didn't get a match or we got one and the previous match is better
+                // We didn't getBB a match or we got one and the previous match is better
                 consumer.encodeSubstring(-(curr + dictLen - 1 - previousMatchIndex), previousMatchLength, consumerContext);
                 
                 // Make sure locations are added for the match.  This allows repetitions to always
@@ -85,7 +89,7 @@ public class SubstringPacker {
                 // We have a match, and we had a previous match, and this one is better.
                 previousMatchIndex = bestMatchIndex;
                 previousMatchLength = bestMatchLength;
-                consumer.encodeLiteral(((int)rawBytes[curr - 1]) & 0xff, consumerContext);
+                consumer.encodeLiteral(((int)rawBytes.get(curr - 1)) & 0xff, consumerContext);
             }
             else if (bestMatchLength > 0) {
                 // We have a match, but no previous match
@@ -94,9 +98,10 @@ public class SubstringPacker {
             }
             else if (bestMatchLength == 0 && previousMatchLength == 0) {
                 // No match, and no previous match.
-                consumer.encodeLiteral(((int)rawBytes[curr]) & 0xff, consumerContext);
+                consumer.encodeLiteral(((int)rawBytes.get(curr)) & 0xff, consumerContext);
             }
         }
+        rawBytes.position(initialPosition + curr);
         consumer.endEncoding(consumerContext);
     }
 

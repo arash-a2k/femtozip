@@ -15,9 +15,14 @@
  */
 package org.toubassi.femtozip.util;
 
+import java.nio.ByteBuffer;
+
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.Arrays;
 
 public class FileUtil {
     
@@ -52,16 +57,56 @@ public class FileUtil {
         return status && file.delete();
     }
     
-    public static byte[] readFile(File file) throws IOException {
+    public static ByteBuffer readFile(File file) throws IOException {
         FileInputStream in = new FileInputStream(file);
         // No need to buffer as StreamUtil.readAll will read in big chunks
-        return StreamUtil.readAll(in);
+        return ByteBuffer.wrap(StreamUtil.readAll(in));
     }
 
     public static byte[] readFile(String path) throws IOException {
         FileInputStream in = new FileInputStream(path);
         // No need to buffer as StreamUtil.readAll will read in big chunks
         return StreamUtil.readAll(in);
+    }
+
+    public static byte[] toArrayResetReader(ByteBuffer buf) {
+
+        byte[] arr = new byte[buf.remaining()];
+        int i = 0;
+        while (buf.hasRemaining()) {
+            arr[i] = buf.get();
+            i++;
+        }
+
+        return arr;
+    }
+
+    public static String getString(ByteBuffer buffer) {
+        return getString(buffer, false);
+    }
+
+    public static String getString(ByteBuffer buffer, Boolean setPosition) {
+        byte[] bytes;
+        if(buffer.hasArray()) {
+            bytes = Arrays.copyOfRange(buffer.array(), buffer.position(), buffer.limit());
+        } else {
+            bytes = new byte[buffer.limit() - buffer.position()];
+            buffer.get(bytes);
+        }
+        if(setPosition)
+            buffer.position(buffer.limit());
+        return new String(bytes, Charset.forName("UTF-8"));
+    }
+
+    public static byte[] getBytes(ByteBuffer buffer) {
+        byte[] bytes;
+        if(buffer.hasArray()) {
+            bytes = buffer.array();
+        } else {
+            bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+        }
+        return bytes;
     }
 
 }

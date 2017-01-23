@@ -19,10 +19,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+import java.nio.ByteBuffer;
+
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
 import org.toubassi.femtozip.DocumentList;
+
+import static org.toubassi.femtozip.util.FileUtil.toArrayResetReader;
 
 /**
  * This is a bit whack
@@ -86,7 +90,7 @@ public class IndexDocumentList implements DocumentList {
         return fieldCounts.length == 0 ? 0 : fieldCounts[fieldCounts.length - 1];
     }
     
-    public byte[] get(int i) throws IOException {
+    public ByteBuffer getBB(int i) throws IOException {
         i++;
         int index = Arrays.binarySearch(fieldCounts, i);
         int docId;
@@ -106,17 +110,22 @@ public class IndexDocumentList implements DocumentList {
         Field fields[] = doc.getFields(fieldName);
         Field field = fields[fieldIndex];
 
-        byte[] bytes;
-        
+        ByteBuffer bytes;
+
         if (field.isBinary()) {
-            bytes = new byte[field.getBinaryLength()];
+            bytes = ByteBuffer.allocate(field.getBinaryLength()); //TODO: pooling
             System.arraycopy(field.getBinaryValue(), field.getBinaryOffset(), bytes, 0, field.getBinaryLength());
         }
         else {
             String value = field.stringValue();
-            bytes = value.getBytes("UTF-8");
+            bytes = ByteBuffer.wrap(value.getBytes("UTF-8"));
         }
         
         return bytes;
+    }
+
+    @Override
+    public byte[] get(int i) throws IOException {
+        return toArrayResetReader(getBB(i));
     }
 }

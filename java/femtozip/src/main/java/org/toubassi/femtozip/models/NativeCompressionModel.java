@@ -15,36 +15,41 @@
  */
 package org.toubassi.femtozip.models;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
+
+import java.nio.ByteBuffer;
+
 
 import org.toubassi.femtozip.CompressionModel;
 import org.toubassi.femtozip.DocumentList;
 
 /**
  * NativeCompressionModel provides an interface to the native implementation
- * of FemtoZip, within the CompressionModel abstraction.  Some things to note.
+ * of FemtoZip, within the CompressionModelBase abstraction.  Some things to note.
  * To use this implementation, you must have built the native shared library.
  * See https://github.com/gtoubassi/femtozip/wiki/How-to-build.
  * 
  * The major difference between native and pure java implementations is that
  * with the native implementation, you call build, and load(String) directly
  * on an instance of this class, vs the buildOptimalModel and loadModel
- * statics on CompressionModel.
+ * statics on CompressionModelBase.
  * 
  * For a simple JNI example, see the org.toubassi.femtozip.models.NativeCompressionModelTest
  * JUnit test case in the source distribution of FemtoZip at
  * http://github.com/gtoubassi/femtozip
  */
-public class NativeCompressionModel extends CompressionModel {
+@Deprecated
+public class NativeCompressionModel implements CompressionModel {
     
     private static boolean nativeLibraryLoaded;
 
     protected long nativeModel;
     
     public NativeCompressionModel() {
+        ensureNativeLibraryLoaded();
+    }
+
+    private void ensureNativeLibraryLoaded() {
         if (!nativeLibraryLoaded) {
             System.loadLibrary("jnifzip");
             nativeLibraryLoaded = true;
@@ -63,6 +68,26 @@ public class NativeCompressionModel extends CompressionModel {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public int compress(ByteBuffer decompressedIn, ByteBuffer compressedOut) {
+        return 0;
+    }
+
+    @Override
+    public int compress(ByteBuffer decompressedIn, OutputStream compressedOut) throws IOException {
+        return 0;
+    }
+
+    @Override
+    public int decompress(ByteBuffer compressedIn, ByteBuffer decompressedOut) {
+        return 0;
+    }
+
+    @Override
+    public int decompress(InputStream compressedIn, ByteBuffer decompressedOut) throws IOException {
+        return 0;
+    }
+
     public void load(DataInputStream in) throws IOException {
         throw new UnsupportedOperationException();
     }
@@ -71,14 +96,16 @@ public class NativeCompressionModel extends CompressionModel {
         throw new UnsupportedOperationException();
     }    
 
-    public void compress(byte[] data, OutputStream out) throws IOException {
+    public void compressDeprecated(ByteBuffer data, OutputStream out) throws IOException {
         // XXX Performance.  Lots of allocations.  Lots of copying.  Use a thread local?  Change this api?
-        byte[] buf = new byte[data.length * 2];
-        int length = compress(data, buf);
+        byte[] buf = new byte[data.remaining() * 2];
+        byte[] dataBuf = new byte[data.remaining()];
+        data.get(dataBuf);
+        int length = compressba(dataBuf, buf);
         
         if (length < 0) {
             buf = new byte[length];
-            length = compress(data, buf);
+            length = compressba(data.array(), buf);
             if (length < 0) {
                 throw new IllegalStateException();
             }
@@ -87,14 +114,17 @@ public class NativeCompressionModel extends CompressionModel {
         out.write(buf, 0, length);
     }
 
-    public byte[] decompress(byte[] compressedData) {
+    public ByteBuffer decompressDeprecated(ByteBuffer compressedData) {
         // XXX Performance.  Lots of allocations.  Lots of copying.  Use a thread local?  Change this api?
-        byte[] buf = new byte[compressedData.length * 20];
-        int length = decompress(compressedData, buf);
+        //TODO: Use Java Nio ByteBuffer instead of copying
+        byte[] buf = new byte[compressedData.remaining() * 20];
+        byte[] compressedDataB = new byte[compressedData.remaining()];
+        compressedData.get(compressedDataB);
+        int length = decompressba(compressedDataB, buf);
         
         if (length < 0) {
             buf = new byte[length];
-            length = decompress(compressedData, buf);
+            length = decompressba(compressedData.array(), buf);
             if (length < 0) {
                 throw new IllegalStateException();
             }
@@ -104,7 +134,11 @@ public class NativeCompressionModel extends CompressionModel {
             System.arraycopy(buf, 0, newbuf, 0, length);
             buf = newbuf;
         }
-        return buf;
+        return ByteBuffer.wrap(buf);
+    }
+
+    public void build(DocumentList documents) throws IOException {
+        buildba(documents);
     }
 
     
@@ -112,11 +146,11 @@ public class NativeCompressionModel extends CompressionModel {
     
     public native void save(String path) throws IOException;
     
-    public native void build(DocumentList documents) throws IOException;
+    public native void buildba(DocumentList documents) throws IOException;
 
-    public native int compress(byte[] data, byte[] output);
+    public native int compressba(byte[] data, byte[] output);
     
-    public native int decompress(byte[] compressedData, byte[] decompressedData);
+    public native int decompressba(byte[] compressedData, byte[] decompressedData);
 
     @Override
     protected void finalize() {

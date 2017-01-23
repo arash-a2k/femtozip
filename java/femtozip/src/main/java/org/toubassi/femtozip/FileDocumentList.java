@@ -20,13 +20,17 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.nio.ByteBuffer;
+
 import org.toubassi.femtozip.util.FileUtil;
+
+import static org.toubassi.femtozip.util.FileUtil.toArrayResetReader;
 
 
 public class FileDocumentList implements DocumentList {
     private String basePath;
     private List<String> files;
-    private List<byte[]> data;
+    private List<ByteBuffer> data;
     
     public FileDocumentList(List<String> files) throws IOException {
         this(null, files, false);
@@ -40,7 +44,7 @@ public class FileDocumentList implements DocumentList {
         this.basePath = basePath;
         this.files = files;
         if (preload) {
-            data = new ArrayList<byte[]>(files.size());
+            data = new ArrayList<ByteBuffer>(files.size());
             for (int i = 0, count = files.size(); i < count; i++) {
                 data.add(loadFile(i));
             }
@@ -51,12 +55,17 @@ public class FileDocumentList implements DocumentList {
         return files.size();
     }
     
-    public byte[] get(int i) throws IOException {
+    public ByteBuffer getBB(int i) throws IOException {
         return data != null ? data.get(i) : loadFile(i);
     }
-    
-    private byte[] loadFile(int i) throws IOException {
+
+    @Override
+    public byte[] get(int i) throws IOException {
+        return toArrayResetReader(getBB(i));
+    }
+
+    private ByteBuffer loadFile(int i) throws IOException {
         String path = basePath == null ? files.get(i) : (basePath + File.separator + files.get(i));
-        return FileUtil.readFile(path);
+        return ByteBuffer.wrap(FileUtil.readFile(path));
     }
 }

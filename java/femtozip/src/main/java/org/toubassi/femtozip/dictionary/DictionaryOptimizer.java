@@ -15,75 +15,105 @@
  */
 package org.toubassi.femtozip.dictionary;
 
+import java.io.DataInputStream;
+import java.nio.ByteBuffer;
+
+import org.toubassi.femtozip.DocumentList;
+import org.toubassi.femtozip.util.StreamUtil;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
-import org.toubassi.femtozip.DocumentList;
 
-/**
- * new version of DictionaryOptimizer which also supports
- * storing the all substring arrays upon making a dictionary.
- * Changed to meet the requirements of dictionary repository
- *  for Brokers in Shared Dictionary Compression Pub/Sub
- * @author Arash
- *
- */
 public class DictionaryOptimizer {
 
     private SubstringArray substrings;
-    private Map<String,Integer> dictSubScores;
     private byte[] bytes;
     private int[] suffixArray;
     private int[] lcp;
     private int[] starts;
-    
+
     public DictionaryOptimizer(DocumentList documents) throws IOException {
-    	
-    	//Linked because the order is important
-    	dictSubScores =  new LinkedHashMap<String, Integer>();
-    	
-    	ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
         starts = new int[documents.size()];
-        
+
         for (int i = 0, count = documents.size(); i < count; i++) {
-            byte[] document = documents.get(i);
+            ByteBuffer document = documents.getBB(i);
+
+            while(document.hasRemaining()){
+                bytesOut.write(document.get());
+            }
             starts[i] = bytesOut.size();
-            bytesOut.write(document);
         }
-        
+
         bytes = bytesOut.toByteArray();
     }
-    
-    public byte[] optimize(int desiredLength) {
-        suffixArray = SuffixArray.computeSuffixArray(bytes);
-        lcp = SuffixArray.computeLCP(bytes, suffixArray);
-        computeSubstrings();
-        return pack(desiredLength);
+
+    public static ByteBuffer getOptimizedDictionary(DocumentList documents, int desiredLength) throws IOException {
+        DictionaryOptimizer dicOpt = new DictionaryOptimizer(documents);
+        return dicOpt.optimize(desiredLength);
     }
 
-    // TODO Bring this up to parity with C++ version, which has optimized
+    public static ByteBuffer readDictionary(DataInputStream in) throws IOException {
+        int dictionaryLength = in.readInt();
+
+        if (dictionaryLength == -1) {
+            return ByteBuffer.allocate(0);
+        }
+        else {
+            byte[] dictionary = new byte[dictionaryLength];
+            int totalRead = StreamUtil.readBytes(in, dictionary, dictionaryLength);
+            if (totalRead != dictionaryLength) {
+                throw new IOException("Bad model in stream.  Could not read dictionary of length " + dictionaryLength);
+            }
+
+            return ByteBuffer.wrap(dictionary);
+        }
+    }
+
+    public ByteBuffer optimize(int desiredLength) { //TODO: subsequent calls should only pack
+        if(bytes.length > 0) {
+            suffixArray = SuffixArray.computeSuffixArray(bytes);
+            lcp = SuffixArray.computeLCP(bytes, suffixArray);
+
+            computeSubstrings();
+            return pack(desiredLength);
+        }
+        else {
+            return ByteBuffer.allocate(0);
+        }
+    }
+
     protected void computeSubstrings() {
         SubstringArray activeSubstrings = new SubstringArray(128);
-        Set<Integer> uniqueDocIds = new HashSet<Integer>();
-        
+        Set<Integer> uniqueDocIds = new HashSet<>();
+
+        int recentDocStartsBase = 0;
+        ArrayList<int[] > recentDocStarts = new ArrayList<>();
+        recentDocStarts.add(docStartForIndex(0));
+
         substrings = new SubstringArray(1024);
         int n = lcp.length;
-        
+
         int lastLCP = lcp[0];
         for (int i = 1; i <= n; i++) {
             // Note we need to process currently existing runs, so we do that by acting like we hit an LCP of 0 at the end.
             // That is why the we loop i <= n vs i < n.  Otherwise runs that exist at the end of the suffixarray/lcp will
             // never be "cashed in" and counted in the substrings.  DictionaryOptimizerTest has a unit test for this.
-            int currentLCP = i == n ? 0 : lcp[i];
-            
+            //int currentLCP = i == n ? 0 : lcp[i];
+
+            int currentLCP;
+            if (i == n) {
+                currentLCP = 0;
+            }
+            else {
+                currentLCP = lcp[i];
+                recentDocStarts.add(docStartForIndex(i));
+            }
+
             if (currentLCP > lastLCP) {
                 // The order here is important so we can optimize adding redundant strings below.
                 for (int j = lastLCP + 1; j <= currentLCP; j++) {
@@ -105,52 +135,42 @@ public class DictionaryOptimizer {
                         // "toubassi", the string toubassi is far more valuable in a shared dictionary.  So find out
                         // how many unique documents this string occurs in.  We do this by taking the start position of
                         // each occurrence, and then map that back to the document using the "starts" array, and uniquing.
-                        // 
-                        // TODO Bring this up to parity with C++ version, which has optimized
-                        //
-                        
                         for (int k = activeSubstrings.index(j) - 1; k < i; k++) {
+
                             int byteIndex = suffixArray[k];
-                            
-                            // Could make this a lookup table if we are willing to burn an int[bytes.length] but thats a lot
-                            int docIndex = Arrays.binarySearch(starts, byteIndex);
-                            
-                            if (docIndex < 0) {
-                                docIndex = -docIndex - 2;
-                            }
-                            
+                            int[] docRange = recentDocStarts.get(k - recentDocStartsBase);
+
                             // While we are at it lets make sure this is a string that actually exists in a single
-                            // document, vs spanning two concatenanted documents.  The idea is that for documents
+                            // document, vs spanning two concatenated documents.  The idea is that for documents
                             // "http://espn.com", "http://google.com", "http://yahoo.com", we don't want to consider
                             // ".comhttp://" to be a legal string.  So make sure the length of this string doesn't
                             // cross a document boundary for this particular occurrence.
-                            int nextDocStart = docIndex < starts.length - 1 ? starts[docIndex + 1] : bytes.length;
-                            if (activeLength <= nextDocStart - byteIndex) {
-                                uniqueDocIds.add(docIndex);
+                            if (activeLength <= docRange[1] - (byteIndex - docRange[0])) {
+                                uniqueDocIds.add(docRange[0]);
                             }
                         }
-                        
+
                         int scoreCount = uniqueDocIds.size();
-                        
+
                         // You might think that its better to just clear uniqueDocIds,
-                        // but actually this set can get very large, and calling clear
+                        // but actually this set can getBB very large, and calling clear
                         // loops over all entries in the internal array and sets them to
                         // null, doesn't even use Arrays.fill, and unfortunately doesn't
                         // short circuit out if size is already 0 (which is a common case
                         // in this code).  Doing: if (uniqueDocIds.size() > 0) uniqueDocIds.clear();
                         // is still not as fast as just tossing the set overboard.
-                        uniqueDocIds = new HashSet<Integer>();
-
+                        uniqueDocIds = new HashSet<>();
                         activeSubstrings.remove(j);
-                        
+
                         if (scoreCount == 0) {
                             continue;
                         }
-                        
+
                         // Don't add redundant strings.  If we just  added ABC, don't add AB if it has the same count.  This cuts down the size of substrings
                         // from growing very large.
                         if (!(lastActiveIndex != -1 && lastActiveIndex == activeIndex && lastActiveCount == activeCount && lastActiveLength > activeLength)) {
 
+                            // Empirically determined that we need 4 chars for it to be worthwhile.  Note gzip takes 3, so cause for skepticism at going with 4.
                             if (activeLength > 3) {
                                 substrings.add(activeIndex, activeLength, scoreCount);
                             }
@@ -162,67 +182,30 @@ public class DictionaryOptimizer {
                 }
             }
             lastLCP = currentLCP;
+
+
+            if (activeSubstrings.size() == 0 && recentDocStarts.size() > 1) {
+                int[] last = recentDocStarts.get(recentDocStarts.size() - 1);
+                recentDocStartsBase += recentDocStarts.size() - 1;
+                recentDocStarts = new ArrayList<>();
+                recentDocStarts.add(last);
+            }
         }
         substrings.sort();
     }
-    
-    protected byte[] pack(int desiredLength) {
-        SubstringArray pruned = new SubstringArray(1024);
-        int size = 0;
-        
-        for (int i = substrings.size() - 1; i >= 0; i--) {
-            boolean alreadyCovered = false;
-            for (int j = 0, c = pruned.size(); j < c; j++) {
-                if (pruned.indexOf(j, substrings, i, bytes, suffixArray) != -1) {
-                    
-                    alreadyCovered = true;
-                    break;
-                }
-            }
-            
-            if (alreadyCovered) {
-                continue;
-            }
-            
-            for (int j = pruned.size() - 1; j >= 0; j--) {
-                if (substrings.indexOf(i, pruned, j, bytes, suffixArray) != -1) {
-                    size -= pruned.length(j);
-                    pruned.remove(j);
-                }
-            }
-            pruned.setScore(pruned.size(), substrings.index(i), substrings.length(i), substrings.score(i));
-            
-            
-            size += substrings.length(i);
-            
-            
-            // We calculate 2x because when we lay the strings out end to end we will merge common prefix/suffixes
-            if (size >= 2*desiredLength) {
-                break;
-            }
-            
-        }
-        
-        // keep record of the pruned substring of this dictionary
 
-        /* my code here @a2k
-        
-        System.out.println("###############################");
-        for (int j = 0; j < pruned.size() ; j++) {
-        	int startIndex = suffixArray[pruned.index(j)];
-        	int endIndex = startIndex + pruned.length(j);
-        	
-        	System.out.print(j + ": " + pruned.score(j) + " substring : ");
-        	for(int i = startIndex; i < endIndex; i++ )
-        		System.out.print((char)bytes[i]);
-        	System.out.println("");
-        }    
-        System.out.println("###############################");
-        */
-        
+    protected ByteBuffer pack(int desiredLength) {
+
+        // First, filter out the substrings to remove overlap since
+        // many of the substrings are themselves substrings of each other (e.g. 'http://', 'ttp://').
+        SubstringArray pruned = getSubstringArrayPruned(desiredLength);
+
+        // Now pack the substrings end to end, taking advantage of potential prefix/suffix overlap
+        // (e.g. if we are packing "toubassi" and "silence", pack it as
+        // "toubassilence" vs "toubassisilence")
         byte[] packed = new byte[desiredLength];
         int pi = desiredLength;
-        
+
         int i, count;
         for (i = 0, count = pruned.size(); i < count && pi > 0; i++) {
             int length = pruned.length(i);
@@ -230,46 +213,121 @@ public class DictionaryOptimizer {
                 length = pi;
             }
             pi -= prepend(bytes, suffixArray[pruned.index(i)], packed, pi, length);
-            
-            //storing substring and scores of the dictionary
-            byte[] temp = Arrays.copyOfRange(bytes, suffixArray[pruned.index(i)], suffixArray[pruned.index(i)]
-            		+ length);
-            //TODO check if the toString method doesn't fail when storing special char
-            // I think utf-8 is used by default for byte to String
-            String tempSubString = new String(temp,StandardCharsets.UTF_8);
-            dictSubScores.put(tempSubString, pruned.score(i));
         }
-        
+
         if (pi > 0) {
             packed = Arrays.copyOfRange(packed, pi, packed.length);
         }
-        
-        
-        int entryCount = 0;
-        
-        /* a2k : printing substrings and scores
-        System.out.println("###############################");
-        
-        for(Map.Entry<String,Integer> sub: dictSubScores.entrySet()){
-        	System.out.println(entryCount + " score: " + sub.getValue() +
-        			" substring: " + sub.getKey());
-        	entryCount++;
-        }
-        System.out.println("###############################");
-        
-        */
-        /* printing final dictionary 
-        
-        System.out.println("$$$$$$$$$$$$$$$$4Dictionary");
-        for (int j = 0; j < packed.length ; j++) {  	
-        	System.out.print((char)packed[j]);
-        }
-        */
-        
-        return packed;
+        return ByteBuffer.wrap(packed);
     }
-    
-    protected int prepend(byte[] from, int fromIndex, byte[] to, int toIndex, int length) {
+
+
+    public Map<byte[], Integer> calcSubstringScores(int desiredLength) {
+
+        Map<byte[], Integer> dictSubScores = new LinkedHashMap<>();
+        SubstringArray pruned = getSubstringArrayPruned(desiredLength);
+
+        byte[] packed = new byte[desiredLength];
+        int pi = desiredLength;
+
+        int i, count;
+        for (i = 0, count = pruned.size(); i < count && pi > 0; i++) {
+            int length = pruned.length(i);
+            if (pi - length < 0) {
+                length = pi;
+            }
+            pi -= prepend(bytes, suffixArray[pruned.index(i)], packed, pi, length);
+
+            //storing substring and scores of the dictionary
+            byte[] subString = Arrays.copyOfRange(bytes, suffixArray[pruned.index(i)], suffixArray[pruned.index(i)] + length);
+            dictSubScores.put(subString, pruned.score(i));
+        }
+
+        return dictSubScores;
+    }
+
+    private SubstringArray getSubstringArrayPruned(int desiredLength) {
+        SubstringArray pruned = new SubstringArray(1024);
+        int size = 0;
+
+        for (int i = substrings.size() - 1; i >= 0; i--) {
+            boolean alreadyCovered = false;
+            for (int j = 0, c = pruned.size(); j < c; j++) {
+                if (pruned.indexOf(j, substrings, i, bytes, suffixArray) != -1) {
+
+                    alreadyCovered = true;
+                    break;
+                }
+            }
+
+            if (alreadyCovered) {
+                continue;
+            }
+
+            for (int j = pruned.size() - 1; j >= 0; j--) {
+                if (substrings.indexOf(i, pruned, j, bytes, suffixArray) != -1) {
+                    size -= pruned.length(j);
+                    pruned.remove(j);
+                }
+            }
+            pruned.setScore(pruned.size(), substrings.index(i), substrings.length(i), substrings.score(i));
+
+
+            size += substrings.length(i);
+
+
+            // We calculate 2x because when we lay the strings out end to end we will merge common prefix/suffixes
+            if (size >= 2*desiredLength) {
+                break;
+            }
+
+        }
+        return pruned;
+    }
+
+    /***
+     * Returns the offset into the byte buffer representing the
+     * start of the document which contains the specified byte
+     * (as an offset into the byte buffer).  So for example
+     * docStartForIndex(0) always returns 0, and
+     * docStartForIndex(15) will return 10 if the first doc is
+     * 10 bytes and the second doc is at least 5.
+     * @param index
+     * @return
+     */
+    private int[] docStartForIndex(int index) {
+        int byteIndex = suffixArray[index];
+        int docStart = lower_bound(starts, starts.length, byteIndex);
+        //int docStart = Arrays.binarySearch(starts, byteIndex);
+
+        if (docStart == starts.length || starts[docStart] != byteIndex) {
+            docStart--;
+        }
+        int nextDoc;
+        if (docStart == (starts.length - 1)) {
+            nextDoc = bytes.length;
+        }
+        else {
+            nextDoc = starts[docStart +1];
+        }
+        return new int[]{docStart, nextDoc - (docStart)};
+    }
+
+    private int lower_bound(int a[], int n, int x) {
+        int low = 0;
+        int high = n;
+        while (low < high) {
+            int middle = (low + high) / 2;
+            if (x <= a[middle]) {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        return low;
+    }
+
+    private int prepend(byte[] from, int fromIndex, byte[] to, int toIndex, int length) {
         int l;
         // See if we have a common suffix/prefix between the string being merged in, and the current strings in the front
         // of the destination.  For example if we pack " the " and then pack " and ", we should end up with " and the ", not " and  the ".
@@ -278,13 +336,14 @@ public class DictionaryOptimizer {
                 break;
             }
         }
-        
-        System.arraycopy(from, fromIndex, to, toIndex - length + l, length - l);
+        int copyLenght = length -l;
+        int toStartIndex = toIndex - length + l;
+
+        System.arraycopy(from, fromIndex, to, toStartIndex, copyLenght);
         return length - l;
     }
-    
+
     private static boolean byteRangeEquals(byte[] bytes1, int index1, byte[] bytes2, int index2, int length) {
-        
         for (;length > 0; length--, index1++, index2++) {
             if (bytes1[index1] != bytes2[index2]) {
                 return false;
@@ -292,32 +351,21 @@ public class DictionaryOptimizer {
         }
         return true;
     }
-    
+
     public int getSubstringCount() {
         return substrings.size();
     }
-    
+
     public int getSubstringScore(int i) {
         return substrings.score(i);
     }
-    
+
     public byte[] getSubstringBytes(int i) {
         int index = suffixArray[substrings.index(i)];
         int length = substrings.length(i);
         return Arrays.copyOfRange(bytes, index, index + length);
     }
-    
-    /**
-     * 
-     * @return dictsubstrings which contains the chosen substrings
-     * for the dict and their scores
-     */
-    public Map<String,Integer> getDictSubstrings(){
-    	
-    	return this.dictSubScores;
-    }
-    
-    
+
     /**
      * For debugging
      */
@@ -329,7 +377,7 @@ public class DictionaryOptimizer {
             out.println();
         }
     }
-    
+
     /**
      * For debugging
      */

@@ -37,12 +37,12 @@ public class SuffixArray {
         byte buf[] = bytes;
         int n = bytes.length;
         int p[] = new int[n + 1];
-        
+
         int[] a, buckets = new int[256*256];
         int i, last, cum, c, cc, ncc, lab, nbuck;
-        
+
         a = new int[n + 1];
-        
+
         Arrays.fill(buckets, -1);
         c = (((int)buf[n - 1]) & 0xff) << 8;
         last = c;
@@ -51,9 +51,9 @@ public class SuffixArray {
             a[i] = buckets[c];
             buckets[c] = i;
         }
-        
+
         a[n] = 0;
-        
+
         lab = 1;
         cum = 1;
         i = 0;
@@ -64,7 +64,7 @@ public class SuffixArray {
                 cum++;
                 lab++;
             }
-            
+
             for(cc = buckets[c]; cc != -1; cc = ncc) {
                 ncc = a[cc];
                 a[cc] = lab;
@@ -81,7 +81,7 @@ public class SuffixArray {
             }
             lab = cum;
         }
-        
+
         ssortit(a, p, n + 1, 2, i, nbuck);
         return p;
     }
@@ -249,25 +249,24 @@ public class SuffixArray {
     }
     
     public static int[] computeLCP(byte[] bytes, int[] suffixArray) {
-        int[] a = suffixArray;
-        byte[] s = bytes;
+
         int n = suffixArray.length;
-        int[] lcp = new int[n];
-        
-        int i, h;
-        int[] inv = new int[n];
-        
+        final int[] lcp = new int[n];
+
+        int i;
+        int[] rank = new int[n];
+
         for (i = 0; i < n; i++) {
-            inv[a[i]] = i;
+            rank[suffixArray[i]] = i;
         }
-        
-        h = 0;
+
+        int h = 0;
         for (i = 0; i < n - 1; i++) {
-            int x = inv[i];
-            int j = a[x - 1];
+            int x = rank[i];
+            int j = suffixArray[x - 1];
             int p1 = i + h;
             int p0 = j + h;
-            while (p1 < (n-1) && p0 < (n-1) && s[p1++] == s[p0++]) {
+            while (p1 < (n-1) && p0 < (n-1) && bytes[p1++] == bytes[p0++]) {
                 h++;
             }
             lcp[x] = h;
@@ -275,11 +274,11 @@ public class SuffixArray {
                 h--;
             }
         }
-        
+
         lcp[0] = 0;
         return lcp;
     }
-         
+
     /**
      * For debugging
      */
@@ -288,10 +287,8 @@ public class SuffixArray {
         int n = p.length;
         
         for (int i = 0; i < n; i++) {
-            String lcpString = "";
-            if (lcp != null) {
-                lcpString = Integer.toString(lcp[i]) + "\t";
-            }
+            String lcpString = Integer.toString(lcp[i]) + "\t";
+
             out.print(suffixArray[i] + "\t" + lcpString);
             out.write(bytes, suffixArray[i], Math.min(40, n - 1 - suffixArray[i]));
             out.println();
